@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: fleetmonitor-postgres
+    labels:
+      com.fleetmonitor.role: relational-source-of-truth
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fleetmonitor}
+      POSTGRES_USER: ${POSTGRES_USER:-fleetmonitor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleetmonitor}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fleetmonitor} -d ${POSTGRES_DB:-fleetmonitor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    container_name: fleetmonitor-mongo
+    labels:
+      com.fleetmonitor.role: gps-and-maintenance-documents
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dashboard:
+    image: python:3.11-slim
+    container_name: fleetmonitor-dashboard
+    profiles: ["dashboard"]
+    working_dir: /workspace
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      POSTGRES_SOURCE_OF_TRUTH: "true"
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      streamlit run app/dashboard.py --server.address=0.0.0.0"
+
+volumes:
+  postgres_data:
+  mongo_data:
