@@ -1,2 +1,0 @@
-"""FleetMonitor application package."""
-
